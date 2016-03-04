@@ -1,4 +1,4 @@
-from weakref import WeakValueDictionary
+from weakref import WeakValueDictionary, ref
 from datetime import datetime
 import csv
 import sys
@@ -52,41 +52,85 @@ class Field:
 
 class Entity:
     
-    def __init__(self, entType, entName, entId, attrTypes=[]):
+    def __init__(self, entType, entName, entId):
         self.type = entType
         self.name = entName
+        self.id = entId
         self.group = None
-        self.attributes = {}
-        for item in attrTypes:
-            self.attributes[item] = []
+        self.linkedEnt = [] # list of linked entities
     
     
-    def joinGroup(self):
-        pass
+    def joinGroup(self, otherEntity):
+        # case when the native entity's group is not set
+        if self.group is None:
+            # assuming the other entity has already a group assigned
+            try:
+                otherEntity.group.addMember(self)
+            # except the other entity has no group
+            except AttributeError:
+                newGroup = Group()
+                newGroup.addMember(self)
+                newGroup.addMember(otherEntity)
+        # case when the native entity's group is set
+        else:
+            thisSize = self.group.size
+            # assuming the other entity has a group already assigned
+            try:
+                otherSize = otherEntity.group.size
+            # except the other entity has no group
+            except AttributeError:
+                self.group.addMember(otherEntity)
+            else:
+                if otherSize > thisSize:
+                    # alien entity wins
+                    otherEntity.group.annexMembers(self.group)
+                else:
+                    # native entity wins
+                    self.group.annexMembers(otherEntity.group)
     
     
-    def linkTo(self, ontherEntity):
-        ''' Linking creates an edge'''
-        pass
+    def linkTo(self, otherEntity):
+        ''' Linking operation is bi-directional, affects both entities equally.'''
+        if ref(otherEntity) not in self.linkedEnt:
+            # creating weak references to linked entities
+            self.linkedEnt.append(ref(otherEntity))
+            otherEntity.linkedEnt(ref(self))
+            self.joinGroup(otherEntity)
     
     
     def listLinks(self):
         ''' Print the list of entities directly linked.'''
-
-
-class Edge:
-    
-    def __init__(self, entOne, entTwo):
-        idList = sorted([entOne.id, entTwo.id])
-        self.id = '{}.{}'.format(idList[0], idList[1]) 
-        pass
-    
-    
-    def getLinked(self, sourceEnt):
         pass
 
 
 class Group:
+    __groupCount = 0 # for naming purpose only
+    __groupInstances = WeakValueDictionary()
+    
     
     def __init__(self):
-        pass
+        Group.__groupCount += 1
+        self.members = []
+        self.name = "G-%d" % Group.__groupCount
+        self.size = 0
+        Group.__groupInstances[self.name] = self
+    
+    
+    def addMember(self, newMember):
+        ''' add new group member entities to the group list '''
+        if newMember not in self.members:
+            self.members.append(newMember)
+            self.size += 1
+            newMember.group = self
+    
+    
+    def annexMembers(self, otherGroup):
+        ''' transfer members from one group to another and update members' group membership '''
+        for member in otherGroup.members:
+            self.addMember(member)
+            member.group = self
+        # remove empty group
+        del otherGroup
+        
+        
+        
