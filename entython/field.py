@@ -8,7 +8,7 @@ import re
 class Field:
 
     def __init__(self):
-        __mainEntityType = '' # setting the main entity type
+        __mainEntityType = None # setting the main entity type
         __entityRegistry = {} # all entities are kept in this dictionary, searchable by type and name
         __entityIndex = 0 # increments by 1 every time a new entity is created   
     
@@ -35,18 +35,96 @@ class Field:
         Top ten by default if not otherwise specified.'''
     
     
-    def importFromFile(self, csvFilePath):
-        pass
+    def importFromFile(self, csvFilePath, mainEnt = None):
+        fileToRead = open(csvFilePath, 'r', newline='')
+        csvReader = csv.reader(fileToRead, delimiter=',', dialect='excel',
+                               quotechar='"')
+        
+        # fetch headers and cleaning them up
+        headers = [ re.sub(r'\s', '', hdr.strip().upper()) for hdr in next(csvReader) ]
+        
+        # quit the process if file contains less than 2 columns
+        if len(headers) < 2:
+            sys.exit('Import error: not enough columns in the imported file!')
+        
+        # map headers to columns with dictionary comprehension
+        headerDict = { value : idx for idx, value in enumerate(headers) }
+        
+        # assign main entity if not already created
+        
+        # if main entity already set, check location of main entity in the new file
+        # throw error if main not in second import? import anyway?
+        
+        met = headers[0] # Main Entity Type, "met" for short, is always the first column
+        print('...setting main entity type to {}'.format(met))
+        
+        
+        # remove main entity from dictionary for iteration through attributes only 
+        headerDict.pop(met)
+        
+        # remove group type from dictionary: ignoring old groups to avoid them be considered attributes
+        if self.__passportHeaders[0] in headerDict.keys():
+            headerDict.pop(self.__passportHeaders[0])
+
+        aTypes = headerDict.keys()
+        
+        # update the class var listing all attribute types, including new from later imports
+        for attrType in aTypes:
+            if attrType not in self.__attributeTypes:
+                self.__attributeTypes.append(attrType)
+                
+        # Main Entity Count
+        mec = 0
+
+        # main import loop begins
+        for line in csvReader:
+            # skip line if main entity is empty
+            if line[0] == "":
+                continue
+            
+            men = re.sub(r'\s', '', line[0].strip().lower()) # Main Entity Name cleaned from spaces
+            mainEnt = self.getEntity(met, men, aTypes)
+            mec += 1
+            # assign new group (or confirm current)
+            # only main entities create groups, attributes receive them and transfer them
+            mainEnt.joinGroup()
+            
+            for attrType in aTypes:
+                idx = headerDict[attrType]
+                aen = re.sub(r'\s', '', line[idx].strip().lower()) # Attribute Entity Name cleaned
+                # skip if attribute is empty
+                if aen == "":
+                    continue
+                
+                attribute = self.getEntity(attrType, aen, [met])
+                # add attributes to the entity, and join same group
+                mainEnt.linkTo(attribute)
+                    
+        fileToRead.close()
+        
+        gn = len(Group._Group__groupInstances)
+        
+        print('Import completed. Imported {} new entities type "{}", in {} group(s).'.format(mec, met, gn))
     
     
     def exportToFile(self):
         pass
     
     
-    def setMainEntity(self):
+    def setMainEntity(self, mainEnType):
         ''' Main entity type is used to define which entity type is more relevant
         in relation to the current Field. It is also used to organize the export
-        output'''
+        output.'''
+        pass
+    
+    
+    def removeSingles(self):
+        ''' Removing entities that are not linked to any other entity.'''
+        pass
+    
+    
+    def removeGroupsBySize(self,gSize):
+        ''' Removing groups equal or smaller than specified size.'''
         pass
     
 
