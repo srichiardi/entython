@@ -8,22 +8,26 @@ import re
 class Field:
 
     def __init__(self):
-        __mainEntityType = None # setting the main entity type
         __entityRegistry = {} # all entities are kept in this dictionary, searchable by type and name
-        __entityIndex = 0 # increments by 1 every time a new entity is created   
-    
-    
-    def addEntity(self, eType, eName):
-        
-        if not self.__entityRegistry[eType][eName]:
-            newEntity = Entity(eType, eName, [], self.__entityIndex)
-            self.__entityRegistry[eType][eName] = newEntity
-        
-        self.__entityIndex += 1
+        __entityIndex = 0 # increments by 1 every time a new entity is created
+        __entityTypes = []
         
     
-    def getEntity(self, eType, eName):
-        pass
+    def getEntity(self, eType, eValue):
+        eName = re.sub(r'\s', '', eValue.strip().lower())
+        
+        try:
+            # check if entity already exists
+            entity = self.__entityRegistry[eType][eName]
+        except KeyError:
+            # create entity
+            eId = self.__entityIndex
+            entity = Entity(eType, eName, eValue, eId)
+            
+            self.__entityIndex += 1
+            self.__entityRegistry[eType][eName] = entity
+        finally:
+            return entity
     
     
     def getGroup(self, gName):
@@ -35,7 +39,7 @@ class Field:
         Top ten by default if not otherwise specified.'''
     
     
-    def importFromFile(self, csvFilePath, mainEnt = None):
+    def importFromFile(self, csvFilePath, met = None):
         fileToRead = open(csvFilePath, 'r', newline='')
         csvReader = csv.reader(fileToRead, delimiter=',', dialect='excel',
                                quotechar='"')
@@ -50,28 +54,28 @@ class Field:
         # map headers to columns with dictionary comprehension
         headerDict = { value : idx for idx, value in enumerate(headers) }
         
-        # assign main entity if not already created
-        
-        # if main entity already set, check location of main entity in the new file
-        # throw error if main not in second import? import anyway?
-        
-        met = headers[0] # Main Entity Type, "met" for short, is always the first column
-        print('...setting main entity type to {}'.format(met))
-        
-        
-        # remove main entity from dictionary for iteration through attributes only 
-        headerDict.pop(met)
-        
-        # remove group type from dictionary: ignoring old groups to avoid them be considered attributes
-        if self.__passportHeaders[0] in headerDict.keys():
-            headerDict.pop(self.__passportHeaders[0])
+        # assign main entity type if not already created
+        if met:
+            try:
+                mei = headerDict[met]
+                headerDict.pop(met)
+            # if the main entity type provided is not in the file headers
+            except KeyError:
+                sys.exit('Import error: missing main entity column!')
+        else:
+            # assume the first column is the main entity type
+            met = headers[0]
+            print('...setting main entity type to {}'.format(met))
+            mei = headerDict[met] # main entity index in the headers
+            headerDict.pop(met)
 
-        aTypes = headerDict.keys()
         
         # update the class var listing all attribute types, including new from later imports
-        for attrType in aTypes:
-            if attrType not in self.__attributeTypes:
-                self.__attributeTypes.append(attrType)
+        for eType in headers:
+            if eType not in self.__entityTypes:
+                self.__entityTypes.append(eType)
+            if eType not in self.__entityRegistry.keys():
+                self.__entityRegistry[eType] = {}
                 
         # Main Entity Count
         mec = 0
@@ -79,11 +83,10 @@ class Field:
         # main import loop begins
         for line in csvReader:
             # skip line if main entity is empty
-            if line[0] == "":
+            if line[mei] == "":
                 continue
             
-            men = re.sub(r'\s', '', line[0].strip().lower()) # Main Entity Name cleaned from spaces
-            mainEnt = self.getEntity(met, men, aTypes)
+            mainEnt = self.getEntity(met, line[mei])
             mec += 1
             # assign new group (or confirm current)
             # only main entities create groups, attributes receive them and transfer them
@@ -91,12 +94,11 @@ class Field:
             
             for attrType in aTypes:
                 idx = headerDict[attrType]
-                aen = re.sub(r'\s', '', line[idx].strip().lower()) # Attribute Entity Name cleaned
                 # skip if attribute is empty
-                if aen == "":
+                if line[idx] == "":
                     continue
                 
-                attribute = self.getEntity(attrType, aen, [met])
+                attribute = self.getEntity(attrType, line[idx])
                 # add attributes to the entity, and join same group
                 mainEnt.linkTo(attribute)
                     
@@ -130,9 +132,10 @@ class Field:
 
 class Entity:
     
-    def __init__(self, entType, entName, entId):
+    def __init__(self, entType, entName, entValue, entId):
         self.type = entType
         self.name = entName
+        self.value = entValue
         self.id = entId
         self.group = None
         self.linkedEnt = [] # list of linked entities
