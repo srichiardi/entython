@@ -8,11 +8,10 @@ class Field:
     
 
     def __init__(self):
-        __entityRegistry = {} # all entities are kept in this dictionary, searchable by type and name
-        __entityIndex = 0 # increments by 1 every time a new entity is created
-        __entityTypes = []
-        __groupRegistry = {}
-        __groupIndex = 0
+        self.__entityRegistry = {} # all entities are kept in this dictionary, searchable by type and name
+        self.__entityIndex = 0
+        self.__groupRegistry = {}
+        self.__edgeRegistry = []
         
     
     def getEntity(self, eType, eValue):
@@ -22,12 +21,14 @@ class Field:
         try:
             # check if entity already exists
             entity = self.__entityRegistry[eType][eName]
+
         except KeyError:
             # create entity linked to this field
             entity = Entity(eType, eName, self)
             # increase the number of entities
             self.__entityIndex += 1
             self.__entityRegistry[eType][eName] = entity
+
         finally:
             return entity
     
@@ -49,40 +50,69 @@ class Field:
             # second group wins
             gLooser = self.__groupRegistry.pop(gOne.name)
             gTwo.annexMembers(gLooser)
-        # field loses a group
-        self.__groupIndex -= 1
     
     
     def linkEntities(self, eOne, eTwo):
-        eOne.linkedEnt.append(eTwo)
-        eTwo.linkedEnt.append(eOne)
-        # case when the first entity's group is not set
-        if eOne.group is None:
-            # assuming the second entity has already a group assigned
-            try:
-                eTwo.group.addMember(eOne)
-            # except the second entity has no group
-            except AttributeError:
-                gName = "G-{}".format(self.__groupIndex)
-                newGroup = Group(gName, self)
-                newGroup.addMember(eOne)
-                newGroup.addMember(eTwo)
-                self.__groupIndex += 1 # field gains a group
-                self.__groupRegistry[gName] = newGroup
-        # case when the first entity's group is set, but the second entity's is not
-        elif eTwo.group is None:
-            eOne.group.addMember(eTwo)
-        # case when both entities have groups set and they are different groups
-        elif eOne.group.name != eTwo.group.name:
-            self.mergeGroups(eOne.group, eTwo.group)
+        # check if entities not already linked
+        if eOne not in eTwo.linkedEnt:
+            # update both entities' list of links
+            eOne.linkedEnt.append(eTwo)
+            eTwo.linkedEnt.append(eOne)
+            # case when the first entity's group is not set
+            if eOne.group is None:
+                # assuming the second entity has already a group assigned
+                try:
+                    eTwo.group.addMember(eOne)
+                # except the second entity has no group
+                except AttributeError:
+                    gName = "G-{}".format(self.__groupIndex)
+                    newGroup = Group(gName, self)
+                    newGroup.addMember(eOne)
+                    newGroup.addMember(eTwo)
+                    self.__groupRegistry[gName] = newGroup
+            # case when the first entity's group is set, but the second entity's is not
+            elif eTwo.group is None:
+                eOne.group.addMember(eTwo)
+            # case when both entities have groups set and they are different groups
+            elif eOne.group.name != eTwo.group.name:
+                self.mergeGroups(eOne.group, eTwo.group)
+            
+            # create a new edge
+            newEdge = Edge(eOne, eTwo, self)
+            self.__edgeRegistry.append(newEdge)
     
     
     def listGroups(self, maxNr = 10):
         ''' Print the list of the clusters identified, decreasing ordered by size.
         Top ten by default if not otherwise specified.'''
         for group in self.self.__groupRegistry.values():
-            pass            
-    
+            pass
+        
+        
+    def countLinksByType(self):
+        ''' Return a dictionary with counts of nr of links broken down by entity type.'''
+        linksDistribution = {}
+        for edge in self.__edgeRegistry:
+            eOne, eTwo = edge.couple
+            # repeat the loop twice, once for each entity
+            for i in range(2):
+                # first entity type never seen before
+                if eOne.type not in linksDistribution.keys():
+                    linksDistribution[eOne.type] = { eTwo.type : { 'listOfUniq' : [eTwo.value],
+                                                                'count' : 1 }
+                                                    }
+                # firts entity type already present, but not second entity type
+                elif eTwo.type not in linksDistribution[eOne.type].keys():
+                    linksDistribution[eOne.type][eTwo.type] = { 'listOfUniq' : [eTwo.value],
+                                                                'count' : 1 }
+                # linked entity name not yet counted
+                elif eTwo.value not in linksDistribution[eOne.type][eTwo.type]['listOfUniq']:
+                    linksDistribution[eOne.type][eTwo.type]['count'] += 1
+                # invert values and repeat loop
+                eTwo, eOne = edge.couple
+        
+        return linksDistribution
+        
     
     def importFromFile(self, csvFilePath, met = None):
         fileToRead = open(csvFilePath, 'r', newline='')
@@ -117,13 +147,11 @@ class Field:
         
         # update the class var listing all attribute types, including new from later imports
         for eType in headers:
-            if eType not in self.__entityTypes:
-                self.__entityTypes.append(eType)
-            if eType not in self.__entityRegistry.keys():
-                self.__entityRegistry[eType] = {}
+            if eType not in self.__entityTypes.keys():
+                self.__entityTypes[eType] = {}
 
         prevNrOfEntities = self.__entityIndex
-        prevNrOfGroups = self.__groupIndex
+        prevNrOfGroups = len(self.__groupRegistry.keys())
 
         # main import loop begins
         for line in csvReader:
@@ -145,7 +173,7 @@ class Field:
         fileToRead.close()
         
         importedEntities = self.__entityIndex - prevNrOfEntities
-        importedGroups = self.__groupIndex - prevNrOfGroups
+        importedGroups = len(self.__groupRegistry.keys()) - prevNrOfGroups
         print('Import completed. Imported {} new entities, \
         and {} group(s) created.'.format(importedEntities, importedGroups))
     
@@ -186,6 +214,16 @@ class Entity:
     def listLinks(self):
         ''' Print the list of entities directly linked.'''
         pass
+    
+
+class Edge:
+    
+    
+    def __init__(self, eOne, eTwo, field):
+        firstEntity, secondEntity = sorted([eOne.value, eTwo.value])
+        self.couple = (firstEntity, secondEntity)
+        self.field = field
+        self.id = '{}-{}'.format(firstEntity, secondEntity)
 
 
 class Group:
