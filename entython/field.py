@@ -1,4 +1,3 @@
-from weakref import WeakValueDictionary, ref
 from datetime import datetime
 import csv
 import sys
@@ -6,15 +5,18 @@ import re
 
 
 class Field:
+    
 
     def __init__(self):
         __entityRegistry = {} # all entities are kept in this dictionary, searchable by type and name
         __entityIndex = 0 # increments by 1 every time a new entity is created
         __entityTypes = []
+        __groupRegistry = {}
+        __groupIndex = 0
         
     
     def getEntity(self, eType, eValue):
-        eName = re.sub(r'\s', '', eValue.strip().lower())
+        eName = re.sub(r'\s', '_', eValue.lower())
         
         try:
             # check if entity already exists
@@ -31,12 +33,54 @@ class Field:
     
     
     def getGroup(self, gName):
-        pass
+        if gName in self.__groupRegistry.keys():
+            return self.__groupRegistry(gName)
+        else:
+            print('Group {} is not in this field.'.format(gName))
+    
+    
+    def mergeGroups(self, gOne, gTwo):
+
+        if gOne.size > gTwo.size:
+            # first group wins
+            gLooser = self.__groupRegistry.pop(gTwo.name)
+            gOne.annexMembers(gLooser)
+        else:
+            # second group wins
+            gLooser = self.__groupRegistry.pop(gOne.name)
+            gTwo.annexMembers(gLooser)
+        # field loses a group
+        self.__groupIndex -= 1
+    
+    
+    def linkEntities(self, eOne, eTwo):
+        eOne.linkTo(eTwo)
+        # case when the first entity's group is not set
+        if eOne.group is None:
+            # assuming the second entity has already a group assigned
+            try:
+                eTwo.group.addMember(eOne)
+            # except the second entity has no group
+            except AttributeError:
+                gName = "G-{}".format(self.__groupIndex)
+                newGroup = Group(gName)
+                newGroup.addMember(eOne)
+                newGroup.addMember(eTwo)
+                self.__groupIndex += 1 # field gains a group
+                self.__groupRegistry[gName] = newGroup
+        # case when the first entity's group is set, but the second entity's is not
+        elif eTwo.group is None:
+            eOne.group.addMember(eTwo)
+        # case when both entities have groups set and they are different groups
+        elif eOne.group.name != eTwo.group.name:
+            self.mergeGroups(eOne.group, eTwo.group)
     
     
     def listGroups(self, maxNr = 10):
         ''' Print the list of the clusters identified, decreasing ordered by size.
         Top ten by default if not otherwise specified.'''
+        for group in self.self.__groupRegistry.values():
+            pass            
     
     
     def importFromFile(self, csvFilePath, met = None):
@@ -44,8 +88,8 @@ class Field:
         csvReader = csv.reader(fileToRead, delimiter=',', dialect='excel',
                                quotechar='"')
         
-        # fetch headers and cleaning them up
-        headers = [ re.sub(r'\s', '', hdr.strip().upper()) for hdr in next(csvReader) ]
+        # fetch headers, replace spaces with single underscores for naming consistency
+        headers =  [ re.sub(r'\s+', '_', hdr.upper()) for hdr in next(csvReader) ]
         
         # quit the process if file contains less than 2 columns
         if len(headers) < 2:
@@ -54,20 +98,20 @@ class Field:
         # map headers to columns with dictionary comprehension
         headerDict = { value : idx for idx, value in enumerate(headers) }
         
-        # assign main entity type if not already created
+        # assign main entity type if not already declared
         if met:
+            met = re.sub(r'\s+', '_', met.upper())
             try:
-                mei = headerDict[met]
-                headerDict.pop(met)
+                mei = headerDict.pop(met) # main entity type index
+                oei = headerDict.values() # other entity types index list
             # if the main entity type provided is not in the file headers
             except KeyError:
                 sys.exit('Import error: missing main entity column!')
         else:
             # assume the first column is the main entity type
-            met = headers[0]
-            print('...setting main entity type to {}'.format(met))
-            mei = headerDict[met] # main entity index in the headers
-            headerDict.pop(met)
+            print('...setting main entity type to {}'.format(headers[0]))
+            mei = 0
+            oei = headerDict.values()[1:] # strip first col
 
         
         # update the class var listing all attribute types, including new from later imports
@@ -76,9 +120,9 @@ class Field:
                 self.__entityTypes.append(eType)
             if eType not in self.__entityRegistry.keys():
                 self.__entityRegistry[eType] = {}
-                
-        # Main Entity Count
-        mec = 0
+
+        prevNrOfEntities = self.__entityIndex
+        prevNrOfGroups = self.__groupIndex
 
         # main import loop begins
         for line in csvReader:
@@ -86,37 +130,27 @@ class Field:
             if line[mei] == "":
                 continue
             
-            mainEnt = self.getEntity(met, line[mei])
-            mec += 1
-            # assign new group (or confirm current)
-            # only main entities create groups, attributes receive them and transfer them
-            mainEnt.joinGroup()
+            mainEnt = self.getEntity(headers[mei], line[mei])
             
-            for attrType in aTypes:
-                idx = headerDict[attrType]
+            for idx in oei:
                 # skip if attribute is empty
                 if line[idx] == "":
                     continue
                 
-                attribute = self.getEntity(attrType, line[idx])
+                attribute = self.getEntity(headers[idx], line[idx])
                 # add attributes to the entity, and join same group
-                mainEnt.linkTo(attribute)
+                self.linkEntities(mainEnt, attribute)
                     
         fileToRead.close()
         
-        gn = len(Group._Group__groupInstances)
-        
-        print('Import completed. Imported {} new entities type "{}", in {} group(s).'.format(mec, met, gn))
+        importedEntities = self.__entityIndex - prevNrOfEntities
+        importedGroups = self.__groupIndex - prevNrOfGroups
+        print('Import completed. Imported {} new entities, \
+        and {} group(s) created.'.format(importedEntities, importedGroups))
     
     
-    def exportToFile(self):
-        pass
-    
-    
-    def setMainEntity(self, mainEnType):
-        ''' Main entity type is used to define which entity type is more relevant
-        in relation to the current Field. It is also used to organize the export
-        output.'''
+    def exportToFile(self, mainEntityType = None, outputFilePath = None):
+        ''' '''
         pass
     
     
@@ -132,6 +166,7 @@ class Field:
 
 class Entity:
     
+    
     def __init__(self, entType, entName, entValue, entId):
         self.type = entType
         self.name = entName
@@ -141,42 +176,12 @@ class Entity:
         self.linkedEnt = [] # list of linked entities
     
     
-    def joinGroup(self, otherEntity):
-        # case when the native entity's group is not set
-        if self.group is None:
-            # assuming the other entity has already a group assigned
-            try:
-                otherEntity.group.addMember(self)
-            # except the other entity has no group
-            except AttributeError:
-                newGroup = Group()
-                newGroup.addMember(self)
-                newGroup.addMember(otherEntity)
-        # case when the native entity's group is set
-        else:
-            thisSize = self.group.size
-            # assuming the other entity has a group already assigned
-            try:
-                otherSize = otherEntity.group.size
-            # except the other entity has no group
-            except AttributeError:
-                self.group.addMember(otherEntity)
-            else:
-                if otherSize > thisSize:
-                    # alien entity wins
-                    otherEntity.group.annexMembers(self.group)
-                else:
-                    # native entity wins
-                    self.group.annexMembers(otherEntity.group)
-    
-    
     def linkTo(self, otherEntity):
         ''' Linking operation is bi-directional, affects both entities equally.'''
-        if ref(otherEntity) not in self.linkedEnt:
+        if otherEntity not in self.linkedEnt:
             # creating weak references to linked entities
-            self.linkedEnt.append(ref(otherEntity))
-            otherEntity.linkedEnt(ref(self))
-            self.joinGroup(otherEntity)
+            self.linkedEnt.append(otherEntity)
+            otherEntity.linkedEnt(self)
     
     
     def listLinks(self):
@@ -185,16 +190,12 @@ class Entity:
 
 
 class Group:
-    __groupCount = 0 # for naming purpose only
-    __groupInstances = WeakValueDictionary()
     
     
-    def __init__(self):
-        Group.__groupCount += 1
+    def __init__(self, gName):
         self.members = []
-        self.name = "G-%d" % Group.__groupCount
+        self.name = gName
         self.size = 0
-        Group.__groupInstances[self.name] = self
     
     
     def addMember(self, newMember):
