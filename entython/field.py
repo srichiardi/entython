@@ -16,16 +16,16 @@ class Field:
         
     
     def getEntity(self, eType, eValue):
-        eName = re.sub(r'\s', '_', eValue.lower())
+        eType = re.sub(r'\s+', '_', eType.upper())
+        eName = re.sub(r'\s+', '_', eValue.lower())
         
         try:
             # check if entity already exists
             entity = self.__entityRegistry[eType][eName]
         except KeyError:
-            # create entity
-            eId = self.__entityIndex
-            entity = Entity(eType, eName, eValue, eId)
-            
+            # create entity linked to this field
+            entity = Entity(eType, eName, self)
+            # increase the number of entities
             self.__entityIndex += 1
             self.__entityRegistry[eType][eName] = entity
         finally:
@@ -54,7 +54,8 @@ class Field:
     
     
     def linkEntities(self, eOne, eTwo):
-        eOne.linkTo(eTwo)
+        eOne.linkedEnt.append(eTwo)
+        eTwo.linkedEnt.append(eOne)
         # case when the first entity's group is not set
         if eOne.group is None:
             # assuming the second entity has already a group assigned
@@ -63,7 +64,7 @@ class Field:
             # except the second entity has no group
             except AttributeError:
                 gName = "G-{}".format(self.__groupIndex)
-                newGroup = Group(gName)
+                newGroup = Group(gName, self)
                 newGroup.addMember(eOne)
                 newGroup.addMember(eTwo)
                 self.__groupIndex += 1 # field gains a group
@@ -98,7 +99,7 @@ class Field:
         # map headers to columns with dictionary comprehension
         headerDict = { value : idx for idx, value in enumerate(headers) }
         
-        # assign main entity type if not already declared
+        # assign main entity type if not already declared, assign mei and oei for main loop
         if met:
             met = re.sub(r'\s+', '_', met.upper())
             try:
@@ -167,11 +168,10 @@ class Field:
 class Entity:
     
     
-    def __init__(self, entType, entName, entValue, entId):
+    def __init__(self, entType, entValue, entField):
         self.type = entType
-        self.name = entName
         self.value = entValue
-        self.id = entId
+        self.field = entField
         self.group = None
         self.linkedEnt = [] # list of linked entities
     
@@ -179,9 +179,8 @@ class Entity:
     def linkTo(self, otherEntity):
         ''' Linking operation is bi-directional, affects both entities equally.'''
         if otherEntity not in self.linkedEnt:
-            # creating weak references to linked entities
-            self.linkedEnt.append(otherEntity)
-            otherEntity.linkedEnt(self)
+            # delegate linking rules to the field to ensure consistency
+            self.field.linkEntities(self, otherEntity)
     
     
     def listLinks(self):
@@ -192,9 +191,10 @@ class Entity:
 class Group:
     
     
-    def __init__(self, gName):
+    def __init__(self, gName, gField):
         self.members = []
         self.name = gName
+        self.field = gField
         self.size = 0
     
     
