@@ -14,11 +14,4 @@ setup(name='entython',
       author_email='stefano_richiardi@yahoo.it',
       license='MIT',
       packages=['entython'],
-      install_requires=[
-          'weakref',
-          'datetime',
-          'csv',
-          'sys',
-          're',
-      ],
       zip_safe=False)

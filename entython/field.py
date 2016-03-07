@@ -11,26 +11,41 @@ class Field:
         self.__entityRegistry = {} # all entities are kept in this dictionary, searchable by type and name
         self.__entityIndex = 0
         self.__groupRegistry = {}
-        self.__edgeRegistry = []
+        self.__edgeRegistry = {}
         
     
     def getEntity(self, eType, eValue):
         eType = re.sub(r'\s+', '_', eType.upper())
         eName = re.sub(r'\s+', '_', eValue.lower())
-        
         try:
             # check if entity already exists
             entity = self.__entityRegistry[eType][eName]
-
         except KeyError:
             # create entity linked to this field
             entity = Entity(eType, eName, self)
-            # increase the number of entities
-            self.__entityIndex += 1
-            self.__entityRegistry[eType][eName] = entity
-
         finally:
             return entity
+        
+        
+    def registerEntity(self, entity):
+        self.__entityIndex += 1
+        self.__entityRegistry[entity.type][entity.name] = entity
+    
+    
+    def registerEdge(self, edge):
+        self.__edgeRegistry[edge.id] = edge
+        
+        
+    def eliminateEdge(self, edgeId):
+        del self.__edgeRegistry[edgeId]
+        
+        
+    def registerGroup(self, group):
+        self.__groupRegistry[group.name] = group
+        
+        
+    def eliminateGroup(self, group):
+        del self.__groupRegistry[group.name]
     
     
     def getGroup(self, gName):
@@ -38,55 +53,12 @@ class Field:
             return self.__groupRegistry(gName)
         else:
             print('Group {} is not in this field.'.format(gName))
-    
-    
-    def mergeGroups(self, gOne, gTwo):
 
-        if gOne.size > gTwo.size:
-            # first group wins
-            gLooser = self.__groupRegistry.pop(gTwo.name)
-            gOne.annexMembers(gLooser)
-        else:
-            # second group wins
-            gLooser = self.__groupRegistry.pop(gOne.name)
-            gTwo.annexMembers(gLooser)
-    
-    
-    def linkEntities(self, eOne, eTwo):
-        # check if entities not already linked
-        if eOne not in eTwo.linkedEnt:
-            # update both entities' list of links
-            eOne.linkedEnt.append(eTwo)
-            eTwo.linkedEnt.append(eOne)
-            # case when the first entity's group is not set
-            if eOne.group is None:
-                # assuming the second entity has already a group assigned
-                try:
-                    eTwo.group.addMember(eOne)
-                # except the second entity has no group
-                except AttributeError:
-                    gName = "G-{}".format(self.__groupIndex)
-                    newGroup = Group(gName, self)
-                    newGroup.addMember(eOne)
-                    newGroup.addMember(eTwo)
-                    self.__groupRegistry[gName] = newGroup
-            # case when the first entity's group is set, but the second entity's is not
-            elif eTwo.group is None:
-                eOne.group.addMember(eTwo)
-            # case when both entities have groups set and they are different groups
-            elif eOne.group.name != eTwo.group.name:
-                self.mergeGroups(eOne.group, eTwo.group)
-            
-            # create a new edge
-            newEdge = Edge(eOne, eTwo, self)
-            self.__edgeRegistry.append(newEdge)
-    
-    
+        
     def listGroups(self, maxNr = 10):
         ''' Print the list of the clusters identified, decreasing ordered by size.
         Top ten by default if not otherwise specified.'''
-        for group in self.self.__groupRegistry.values():
-            pass
+        pass
         
         
     def countLinksByType(self):
@@ -101,7 +73,7 @@ class Field:
                     linksDistribution[eOne.type] = { eTwo.type : { 'listOfUniq' : [eTwo.value],
                                                                 'count' : 1 }
                                                     }
-                # firts entity type already present, but not second entity type
+                # first entity type already present, but not second entity type
                 elif eTwo.type not in linksDistribution[eOne.type].keys():
                     linksDistribution[eOne.type][eTwo.type] = { 'listOfUniq' : [eTwo.value],
                                                                 'count' : 1 }
@@ -111,7 +83,16 @@ class Field:
                 # invert values and repeat loop
                 eTwo, eOne = edge.couple
         
-        return linksDistribution
+        # summary dictionary
+        sumDict = {}
+        for typeOne in linksDistribution.keys():
+            sumDict[typeOne] = { 'link_total' : 0,
+                                'link_types' : 0 }
+            for typeTwo in linksDistribution[typeOne].keys():
+                sumDict[typeOne]['link_total'] += linksDistribution[typeOne][typeTwo]['count']
+                sumDict[typeOne]['link_types'] += 1
+        
+        return sumDict
         
     
     def importFromFile(self, csvFilePath, met = None):
@@ -168,7 +149,7 @@ class Field:
                 
                 attribute = self.getEntity(headers[idx], line[idx])
                 # add attributes to the entity, and join same group
-                self.linkEntities(mainEnt, attribute)
+                mainEnt.linkTo(attribute)
                     
         fileToRead.close()
         
@@ -179,7 +160,14 @@ class Field:
     
     
     def exportToFile(self, mainEntityType = None, outputFilePath = None):
-        ''' '''
+        ''' Save the most linked entity to a csv file.'''
+        # request output file path if not passed as argument
+        
+        # if not determine the most linked entity type if not passed as argument
+        if mainEntityType is None:
+            pass
+        
+        # loop through the data and save in file
         pass
     
     
@@ -201,39 +189,114 @@ class Entity:
         self.value = entValue
         self.field = entField
         self.group = None
-        self.linkedEnt = [] # list of linked entities
+        self.links = {} # dict of linked entities
+        self.field.registerEntity(self) # update the entity registry
     
     
-    def linkTo(self, otherEntity):
+    def linkTo(self, eTwo):
         ''' Linking operation is bi-directional, affects both entities equally.'''
-        if otherEntity not in self.linkedEnt:
-            # delegate linking rules to the field to ensure consistency
-            self.field.linkEntities(self, otherEntity)
+        # check if entities not already linked
+        if Edge.linkId(self, eTwo) not in self.links.keys():
+            # update both entities' list of links
+            # create a new edge
+            newlink = Edge(self, eTwo, self.field)
+            self.links[newlink.id] = eTwo
+            eTwo.links[newlink.id] = self
+            # case when the first entity's group is not set
+            if self.group is None:
+                # assuming the second entity has already a group assigned
+                try:
+                    eTwo.group.addMember(self)
+                # except the second entity has no group
+                except AttributeError:
+                    newGroup = Group(self.field)
+                    newGroup.addMember(self)
+                    newGroup.addMember(eTwo)
+                    
+            # case when the first entity's group is set, but the second entity's is not
+            elif eTwo.group is None:
+                self.group.addMember(eTwo)
+            
+            # case when both entities have groups set and they are different groups
+            elif self.group.name != eTwo.group.name:
+                if self.group.size > eTwo.group.size:
+                    # first group wins
+                    self.group.annexMembers(eTwo.group)
+                else:
+                    # second group wins
+                    eTwo.group.annexMembers(self.group)
     
     
-    def listLinks(self):
+    def getLinks(self):
         ''' Print the list of entities directly linked.'''
-        pass
+        return self.links.values()
+    
+    
+    def removeLink(self, eTwo):
+        ''' Remove linked entity.'''
+        linkId = Edge.linkId(self, eTwo)
+        self.links.pop(linkId)
+    
+    
+    def __repr__(self):
+        return repr(self.value)
+    
+    
+    def __del__(self):
+        ''' Delete itself from linked entities, and delete links.'''
+        for eTwo in self.links.values():
+            eTwo.removeLink(self)
+            
+        for linkId in self.links.keys():
+            self.field.eliminateEdge(linkId)
+            
+        del self
     
 
 class Edge:
     
     
     def __init__(self, eOne, eTwo, field):
-        firstEntity, secondEntity = sorted([eOne.value, eTwo.value])
-        self.couple = (firstEntity, secondEntity)
+        self.couple = (eOne, eTwo)
         self.field = field
-        self.id = '{}-{}'.format(firstEntity, secondEntity)
+        self.id = Edge.linkId(eOne, eTwo)
+        self.field.registerEdge(self)
+    
+    
+    def __repr__(self):
+        return repr(self.id)
+    
+    
+    @classmethod
+    def linkId(cls, eOne, eTwo):
+        ''' Generating a string with the two entity names sorted.'''
+        firstEntity, secondEntity = sorted([eOne.value, eTwo.value])
+        return '{}-{}'.format(firstEntity, secondEntity)
 
 
 class Group:
     
+    __groupIndex = 0 # naming purpose only
     
-    def __init__(self, gName, gField):
+    
+    def __init__(self, gField):
         self.members = []
-        self.name = gName
+        self.name = "G-{}".format(Group.__groupIndex)
         self.field = gField
         self.size = 0
+        self.field.registerGroup(self)
+        Group._groupIndex += 1
+    
+    
+    def __repr__(self):
+        return repr(self.name)
+    
+    
+    def __del__(self):
+        for entity in self.members:
+            del entity
+        self.field.eliminateGroup(self)
+        del self
     
     
     def addMember(self, newMember):
@@ -249,8 +312,9 @@ class Group:
         for member in otherGroup.members:
             self.addMember(member)
             member.group = self
-        # remove empty group
-        del otherGroup
         
+        # remove empty group
+        self.field.eliminateGroup(otherGroup)
+        del otherGroup
         
         
