@@ -1,3 +1,4 @@
+from weakref import WeakValueDictionary
 from datetime import datetime
 import csv
 import sys
@@ -8,18 +9,18 @@ class Field:
     
 
     def __init__(self):
-        self.__entityRegistry = {} # all entities are kept in this dictionary, searchable by type and name
-        self.__entityIndex = 0
-        self.__groupRegistry = {}
-        self.__edgeRegistry = {}
+        self._entityRegistry = {} # all entities are kept in this dictionary, searchable by type and name
+        self._entityIndex = 0
+        self._groupRegistry = {}
+        self._edgeRegistry = {}
         
     
     def getEntity(self, eType, eValue):
-        eType = re.sub(r'\s+', '_', eType.upper())
+        eType = re.sub(r'\s+', '_', type.upper())
         eName = re.sub(r'\s+', '_', eValue.lower())
         try:
             # check if entity already exists
-            entity = self.__entityRegistry[eType][eName]
+            entity = self._entityRegistry[eType][eName]
         except KeyError:
             # create entity linked to this field
             entity = Entity(eType, eName, self)
@@ -28,29 +29,29 @@ class Field:
         
         
     def registerEntity(self, entity):
-        self.__entityIndex += 1
-        self.__entityRegistry[entity.type][entity.name] = entity
+        self._entityIndex += 1
+        self._entityRegistry[entity.type][entity.name] = entity
     
     
     def registerEdge(self, edge):
-        self.__edgeRegistry[edge.id] = edge
+        self._edgeRegistry[edge.id] = edge
         
         
     def eliminateEdge(self, edgeId):
-        del self.__edgeRegistry[edgeId]
+        del self._edgeRegistry[edgeId]
         
         
     def registerGroup(self, group):
-        self.__groupRegistry[group.name] = group
+        self._groupRegistry[group.name] = group
         
         
     def eliminateGroup(self, group):
-        del self.__groupRegistry[group.name]
+        del self._groupRegistry[group.name]
     
     
     def getGroup(self, gName):
-        if gName in self.__groupRegistry.keys():
-            return self.__groupRegistry(gName)
+        if gName in self._groupRegistry.keys():
+            return self._groupRegistry(gName)
         else:
             print('Group {} is not in this field.'.format(gName))
 
@@ -185,12 +186,15 @@ class Entity:
     
     
     def __init__(self, entType, entValue, entField):
-        self.type = entType
-        self.value = entValue
-        self.field = entField
-        self.group = None
-        self.links = {} # dict of linked entities
-        self.field.registerEntity(self) # update the entity registry
+        if isinstance(entField, Field):
+            self.type = entType
+            self.value = entValue
+            self.field = entField
+            self.group = None
+            self.links = WeakValueDictionary() # dict of linked entities
+            self.field.registerEntity(self) # update the entity registry
+        else:
+            raise TypeError("Invalid field argument, field instance expected!")
     
     
     def linkTo(self, eTwo):
@@ -244,9 +248,7 @@ class Entity:
     
     def __del__(self):
         ''' Delete itself from linked entities, and delete links.'''
-        for eTwo in self.links.values():
-            eTwo.removeLink(self)
-            
+        # remove link from linked entity necessary? no because it's a weaklink
         for linkId in self.links.keys():
             self.field.eliminateEdge(linkId)
             
