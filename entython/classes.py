@@ -9,6 +9,8 @@ class Field:
     
 
     def __init__(self):
+        ''' The field is the space that holds and manages all other classes. From the field is possible
+        to search other create, instances and modify them. '''
         self._entityRegistry = {} # all entities are kept in this dictionary, searchable by type and name
         self._entityIndex = 0
         self._groupRegistry = {}
@@ -31,6 +33,11 @@ class Field:
     def registerEntity(self, entity):
         self._entityIndex += 1
         self._entityRegistry[entity.type][entity.name] = entity
+        
+        
+    def eliminateEntity(self, entity):
+        self._entityIndex -= 1
+        del self._entityRegistry[entity.type][entity.name]
     
     
     def registerEdge(self, edge):
